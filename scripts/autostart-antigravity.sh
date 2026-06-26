@@ -20,7 +20,11 @@
 #   - Window title matching may need updating if Google changes it.
 # =============================================================================
 
-set -euo pipefail
+# Do NOT use set -euo pipefail here — xdotool/wmctrl/xdpyinfo return non-zero
+# on expected "not found yet" cases and we want graceful degradation, not exit.
+set -u
+
+export DISPLAY="${DISPLAY:-:1}"
 
 # =============================================================================
 # Configuration
@@ -64,12 +68,18 @@ log "Waiting ${STARTUP_DELAY}s for XFCE..."
 sleep "$STARTUP_DELAY"
 
 # Wait until an X display is available.
-log "Waiting for X11 display..."
+log "Waiting for X11 display (DISPLAY=${DISPLAY})..."
+WAIT_COUNT=0
 until xdpyinfo >/dev/null 2>&1; do
     sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ "$WAIT_COUNT" -ge 60 ]; then
+        log "ERROR: X11 display not available after 60s. Giving up."
+        exit 1
+    fi
 done
 
-log "Display detected."
+log "Display detected after ${WAIT_COUNT}s."
 
 # =============================================================================
 # Verify Installation
@@ -111,8 +121,7 @@ for TITLE in "${WINDOW_TITLES[@]}"; do
         WINDOW=$(xdotool search --name "$TITLE" 2>/dev/null | head -1 || true)
 
         if [ -n "$WINDOW" ]; then
-
-            log "Found window '$TITLE' ($WINDOW)"
+            log "Found window '$TITLE' (id=$WINDOW) via xdotool"
 
             xdotool windowactivate "$WINDOW" 2>/dev/null || true
             xdotool windowsize "$WINDOW" 100% 100% 2>/dev/null || true
@@ -123,8 +132,13 @@ for TITLE in "${WINDOW_TITLES[@]}"; do
         fi
     fi
 
+    # Fallback: try wmctrl regardless (it's a no-op if window not found)
     if command -v wmctrl >/dev/null 2>&1; then
-        wmctrl -r "$TITLE" -b add,maximized_vert,maximized_horz 2>/dev/null || true
+        if wmctrl -r "$TITLE" -b add,maximized_vert,maximized_horz 2>/dev/null; then
+            log "Found window '$TITLE' via wmctrl"
+            FOUND=true
+            break
+        fi
     fi
 
 done

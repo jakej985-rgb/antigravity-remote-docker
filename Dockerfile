@@ -66,9 +66,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xsel \
     # Process management
     supervisor \
-    # Auto-updates
-    unattended-upgrades \
-    apt-transport-https \
+    # Auto-updates (tarball-based, curl is already present above)
     # Utilities
     nano \
     vim \
@@ -79,6 +77,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Window management (for auto-maximize)
     wmctrl \
     xdotool \
+    # X11 display utilities (required by scripts)
+    x11-xserver-utils \
+    x11-utils \
+    xcvt \
+    # Networking utilities (nc used by start-novnc.sh)
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
