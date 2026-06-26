@@ -1,0 +1,155 @@
+# =============================================================================
+# Antigravity Remote Docker — Build & Push to GHCR
+# =============================================================================
+# Triggers:
+#   - Push to main or dev branch
+#   - Push of any version tag (v*)
+#   - Pull requests against main (build only, no push)
+#   - Manual dispatch (workflow_dispatch)
+#
+# Publishes to: ghcr.io/jakej985-rgb/antigravity-remote-docker
+#
+# Tags produced:
+#   - :latest           (on push to main)
+#   - :dev              (on push to dev)
+#   - :1.2.3 / :1.2     (on version tag push)
+#   - :sha-<short>      (always)
+# =============================================================================
+
+name: Build & Push Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to build from"
+        required: false
+        default: "dev"
+        type: string
+      push:
+        description: "Push image to GHCR after build?"
+        required: false
+        default: true
+        type: boolean
+      tag_override:
+        description: "Optional extra tag (e.g. 'stable', 'test'). Leave blank to use auto tags."
+        required: false
+        default: ""
+        type: string
+
+# Only one manual run at a time per ref
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # -----------------------------------------------------------------------
+      # 2. Set up QEMU (for multi-platform if needed in future)
+      # -----------------------------------------------------------------------
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # -----------------------------------------------------------------------
+      # 3. Set up Docker Buildx
+      # -----------------------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -----------------------------------------------------------------------
+      # 4. Log in to GHCR (skip on PRs — they can't push)
+      # -----------------------------------------------------------------------
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # -----------------------------------------------------------------------
+      # 5. Extract metadata (tags + labels)
+      # -----------------------------------------------------------------------
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Tag matching the input ref (branch name or tag)
+            type=raw,value=${{ inputs.ref }}
+            # Optional extra tag if provided
+            type=raw,value=${{ inputs.tag_override }},enable=${{ inputs.tag_override != '' }}
+            # :sha-abc1234 always
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=Antigravity Remote Docker
+            org.opencontainers.image.description=GPU-accelerated Antigravity IDE via noVNC in Docker
+            org.opencontainers.image.vendor=jakej985-rgb
+            org.opencontainers.image.licenses=MIT
+
+      # -----------------------------------------------------------------------
+      # 6. Build and push
+      #    - linux/amd64 only (NVIDIA GPU passthrough is x86_64 only)
+      #    - GitHub Actions cache for faster layer reuse
+      # -----------------------------------------------------------------------
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -----------------------------------------------------------------------
+      # 7. Print image digest summary
+      # -----------------------------------------------------------------------
+      - name: Image digest
+        run: |
+          if [ "${{ inputs.push }}" = "true" ]; then
+            echo "### 🐳 Docker Image Published" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Registry:** \`ghcr.io/${{ github.repository }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Built from ref:** \`${{ inputs.ref }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/${{ github.repository }}:${{ inputs.ref }}" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ Docker Image Built (not pushed)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Build succeeded for ref \`${{ inputs.ref }}\`. Push was disabled." >> $GITHUB_STEP_SUMMARY
+          fi
