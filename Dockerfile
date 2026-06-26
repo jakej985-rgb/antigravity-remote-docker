@@ -13,22 +13,19 @@ LABEL description="Google Antigravity with noVNC remote access and GPU support"
 # =============================================================================
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
-    # Display settings
     DISPLAY=:1 \
     DISPLAY_WIDTH=1920 \
     DISPLAY_HEIGHT=1080 \
     DISPLAY_DEPTH=24 \
-    # VNC settings
     VNC_PORT=5901 \
     NOVNC_PORT=6080 \
     VNC_PASSWORD=antigravity \
-    # User settings
     USER=antigravity \
     UID=1000 \
     GID=1000 \
     HOME=/home/antigravity \
-    # Antigravity settings
-    ANTIGRAVITY_AUTO_UPDATE=true
+    ANTIGRAVITY_HOME=/opt/antigravity-ide \
+    WORKSPACE=/home/antigravity/workspace
 
 # =============================================================================
 # System Dependencies
@@ -114,16 +111,21 @@ RUN mkdir -p /opt/novnc \
 RUN echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=vnc.html?autoconnect=true&resize=remote&lang=en"></head><body>Redirecting...</body></html>' > /opt/novnc/index.html
 
 # =============================================================================
-# Add Antigravity Repository and Install
+# Install Antigravity IDE (Tarball)
 # =============================================================================
-RUN mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg | \
-    gpg --dearmor --yes -o /etc/apt/keyrings/antigravity-repo-key.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" | \
-    tee /etc/apt/sources.list.d/antigravity.list > /dev/null \
-    && apt-get update \
-    && apt-get install -y antigravity \
-    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p ${ANTIGRAVITY_HOME} \
+    && curl -fsSL \
+    "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/2.1.1-6123990880747520/linux-x64/Antigravity%20IDE.tar.gz" \
+    -o /tmp/antigravity.tar.gz \
+    && tar -xzf /tmp/antigravity.tar.gz \
+        -C ${ANTIGRAVITY_HOME} \
+        --strip-components=1 \
+    && ln -sf ${ANTIGRAVITY_HOME}/antigravity-ide /usr/local/bin/antigravity-ide \
+    && chmod +x ${ANTIGRAVITY_HOME}/antigravity-ide \
+    && rm -f /tmp/antigravity.tar.gz
+
+ENV PATH="${ANTIGRAVITY_HOME}:${PATH}"
 
 # =============================================================================
 # Create Non-Root User
@@ -132,6 +134,7 @@ RUN groupadd -g ${GID} ${USER} \
     && useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USER} \
     && echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/${USER} \
     && chmod 0440 /etc/sudoers.d/${USER}
+RUN chown -R ${USER}:${USER} ${ANTIGRAVITY_HOME}
 
 # =============================================================================
 # Configure VNC and Desktop
@@ -145,13 +148,6 @@ RUN mkdir -p /home/${USER}/.vnc /home/${USER}/.config \
 COPY --chown=${USER}:${USER} config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY --chown=${USER}:${USER} scripts/ /opt/scripts/
 RUN chmod +x /opt/scripts/*.sh
-
-# =============================================================================
-# Configure Auto-Updates for Antigravity
-# =============================================================================
-RUN echo 'APT::Periodic::Update-Package-Lists "1";' > /etc/apt/apt.conf.d/20auto-upgrades \
-    && echo 'APT::Periodic::Unattended-Upgrade "1";' >> /etc/apt/apt.conf.d/20auto-upgrades \
-    && echo 'Unattended-Upgrade::Allowed-Origins { "antigravity-auto-updater-dev:antigravity-debian"; };' > /etc/apt/apt.conf.d/50unattended-upgrades
 
 # =============================================================================
 # Exposed Ports

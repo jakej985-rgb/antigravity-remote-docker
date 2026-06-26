@@ -55,29 +55,34 @@ chmod +x ~/.vnc/xstartup
 # Initialize Configuration
 # =============================================================================
 echo "Initializing configuration..."
-mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml
+
+# Ensure user directories exist
+mkdir -p \
+    "$HOME/.config" \
+    "$HOME/.cache" \
+    "$HOME/.local/share" \
+    "$HOME/.vnc" \
+    "$HOME/workspace" \
+    "$HOME/.antigravity"
+
+mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
 
 # Apply default panel configuration if not present
 if [ ! -f ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml ]; then
     echo "Applying custom panel configuration..."
     if [ -f /opt/defaults/xfce4-panel.xml ]; then
-        cp /opt/defaults/xfce4-panel.xml ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+        cp /opt/defaults/xfce4-panel.xml \
+   "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml"
     else
         echo "Warning: Default panel config not found at /opt/defaults/xfce4-panel.xml"
     fi
 fi
 
 # =============================================================================
-# Create directories
-# =============================================================================
-echo "Creating workspace directories..."
-mkdir -p ~/workspace ~/.config ~/.antigravity
-
-# =============================================================================
 # Fix permissions
 # =============================================================================
 echo "Fixing permissions..."
-sudo chown -R $(id -u):$(id -g) ~ 2>/dev/null || true
+sudo chmod -R u+rwX "$HOME" 2>/dev/null || true
 
 # =============================================================================
 # Check for Antigravity updates (if enabled)
