@@ -111,7 +111,7 @@ jobs:
       # 6. Build and push
       #    - linux/amd64 only (NVIDIA GPU passthrough is x86_64 only)
       #    - GitHub Actions cache for faster layer reuse
-      # -----------------------------------------------------------------------
+      # -------------------------------------------------------------------------
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v6
